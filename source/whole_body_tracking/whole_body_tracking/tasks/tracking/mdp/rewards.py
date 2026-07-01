@@ -725,14 +725,25 @@ def cmd_velocity_tracking(
 
 
 @_reward_checked
-def penalize_weak_foot_contact(env: ManagerBasedRLEnv, command_name: str, threshold: float, std: float) -> torch.Tensor:
+def penalize_weak_foot_contact(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    threshold: float,
+    std: float,
+    weak_foot_name: str | None = None,
+) -> torch.Tensor:
     """Penalize the non-kicking foot for getting close enough to contact the ball.
 
     This keeps the shot focused on the configured main foot.
+
+    ``weak_foot_name`` (a tracked body name) can be supplied from config for
+    non-G1 robots; if ``None`` it falls back to the G1 ankle-roll naming derived
+    from ``main_foot_name``.
     """
     command: MotionCommand = env.command_manager.get_term(command_name)
-    main_foot_name = command.cfg.main_foot_name
-    weak_foot_name = "left_ankle_roll_link" if main_foot_name == "right_ankle_roll_link" else "right_ankle_roll_link"
+    if weak_foot_name is None:
+        main_foot_name = command.cfg.main_foot_name
+        weak_foot_name = "left_ankle_roll_link" if main_foot_name == "right_ankle_roll_link" else "right_ankle_roll_link"
     body_ids = _get_body_indexes(command, [weak_foot_name])
     foot_ball_distance = torch.norm(command.robot_body_pos_w[:, body_ids, :3].squeeze(1) - command.ball_pos, dim=-1)
     reward = torch.exp(-torch.square(foot_ball_distance - threshold) / (std**2))
@@ -993,7 +1004,9 @@ def arm_default_pose_penalty(
     joint_ids, joint_names = robot.find_joints(arm_joint_names)
     cur = robot.data.joint_pos[:, joint_ids]
     default = robot.data.default_joint_pos[:, joint_ids].clone()
-    elbow_joint_ids = [idx for idx, joint_name in enumerate(joint_names) if joint_name.endswith("_elbow_joint")]
+    # Match elbow by substring so both G1 (``left_elbow_joint``) and Adam
+    # (``elbow_Left``) naming resolve the 5x elbow weighting.
+    elbow_joint_ids = [idx for idx, joint_name in enumerate(joint_names) if "elbow" in joint_name.lower()]
     
     error_sq = (cur - default).pow(2)
     reward = -error_sq  # (E, J)

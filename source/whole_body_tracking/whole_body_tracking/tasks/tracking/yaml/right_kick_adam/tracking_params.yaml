@@ -1,0 +1,94 @@
+# ==============================================================================
+#  BeyondMimic - Adam (Inspire, 29 DOF) Tracking Hyperparameters (Stage-1)
+#  Adam variant of right_kick/tracking_params.yaml.
+#  Robot-specific fields (main_foot_name, ee_body_pos links) use Adam URDF names.
+#  NOTE: main_foot_name is read at module import to build the ball-contact sensor
+#  prim path, so you MUST select this preset via WBT_TASK_PARAMS_YAML for Adam.
+# ==============================================================================
+
+# ---------------------------------------------------------------------------
+# Reward group weights
+# ---------------------------------------------------------------------------
+stage: tracking
+motion_weight: 1.0
+goal_weight: 0.0
+reg_weight: 0.05
+goal_reward_burst_steps: 4
+goal_reset_delay_steps: 50
+shot_success_threshold: 0.5
+
+# ---------------------------------------------------------------------------
+# Episode initialization ranges
+# ---------------------------------------------------------------------------
+init_pos_range: 0.1
+init_vel_range: 0.0
+init_pos_z_bound: 0.0
+init_vel_z_range: 0.0
+init_yaw_range: 0.2
+static_ball_probability: 0.05
+stand_still_env_ratio: 0.0
+lidar_stale_probability: 0.0
+shot_valid_steps: 500
+start_time_sampling_fraction: 1.0
+
+ball_init_state_pos: [0.25, 1.0, 0.12]
+ball_init_state_vel: [0.0, 0.0, 0.0]
+std_difficulty_multiplier: 1.0
+
+# ---------------------------------------------------------------------------
+# Simulation / physics
+# ---------------------------------------------------------------------------
+rigid_num: 20
+use_rough_terrain: false
+
+# ---------------------------------------------------------------------------
+# Robot / task identity  (Adam URDF names)
+# ---------------------------------------------------------------------------
+main_foot_name: "toeRight"
+                             # Adam right foot link (== G1 right_ankle_roll_link).
+                             # Use "toeLeft" for a left-foot policy.
+
+# ---------------------------------------------------------------------------
+# Domain randomization - velocity push range (world frame)
+# ---------------------------------------------------------------------------
+velocity_range:
+  x:     [-0.5,  0.5]
+  y:     [-0.5,  0.5]
+  z:     [-0.2,  0.2]
+  roll:  [-0.52, 0.52]
+  pitch: [-0.52, 0.52]
+  yaw:   [-0.78, 0.78]
+
+# ---------------------------------------------------------------------------
+# Adapted motion and jump trigger
+# ---------------------------------------------------------------------------
+critic_frame_index: 250
+adapt_motion_flag: false
+jump_flag: false
+use_ontime_ball_reset: false
+critical_frame_adaptive_sampling: true
+critical_frame_sampling_window: 10
+anchor_xy_offset: [0.0, 0.0]
+threshold_r: 0.2
+threshold_t: 0.4
+lambda_factor: 0.5
+
+reward_overrides:
+  motion:
+    motion_global_anchor_pos:
+      weight_scale: 0.5
+    motion_global_anchor_ori:
+      weight_scale: 0.5
+  regularization:
+    action_rate_l2:
+      weight: -0.1
+termination_overrides:
+  anchor_pos:
+    threshold: 0.25
+  ee_body_pos:
+    threshold:
+      toeLeft: 0.25
+      toeRight: 0.25
+      wristYawLeft: 0.25
+      wristYawRight: 0.25
+  self_collision: false
