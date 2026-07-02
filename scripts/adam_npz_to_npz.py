@@ -55,6 +55,16 @@ parser.add_argument(
     action="store_true",
     help="Mirror the motion about the x-axis (+y -> -y). Off by default for Adam.",
 )
+parser.add_argument(
+    "--rotate_z_deg",
+    type=float,
+    default=0.0,
+    help=(
+        "Rotate the whole motion about the world Z-axis (about the start pose) by this "
+        "many degrees. Use 180 to flip a -Y-facing kick to +Y so it matches the ball/target "
+        "convention. This is a true rotation (preserves left/right handedness), unlike --turn_y_axis."
+    ),
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -115,7 +125,8 @@ class AdamMotionLoader:
     (root_pos/root_rot/dof_pos) instead of CSV columns.
     """
 
-    def __init__(self, motion_file, input_fps, output_fps, device, frame_range, quat_order, turn_y_axis):
+    def __init__(self, motion_file, input_fps, output_fps, device, frame_range, quat_order, turn_y_axis,
+                 rotate_z_deg=0.0):
         self.motion_file = motion_file
         self.output_fps = output_fps
         self.output_dt = 1.0 / output_fps
@@ -123,6 +134,7 @@ class AdamMotionLoader:
         self.frame_range = frame_range
         self.quat_order = quat_order
         self.turn_y_axis = turn_y_axis
+        self.rotate_z_deg = float(rotate_z_deg)
         self.current_idx = 0
 
         data = np.load(motion_file)
@@ -156,13 +168,29 @@ class AdamMotionLoader:
             q[:, 3] = +base_rot[:, 0]
             base_rot = q
 
+        if self.rotate_z_deg != 0.0:
+            theta = np.deg2rad(self.rotate_z_deg)
+            cos, sin = float(np.cos(theta)), float(np.sin(theta))
+            # Rotate world positions about the motion's starting XY so the start
+            # pose stays in place (only the facing/travel direction changes).
+            pivot = base_pos[0, :2].clone()
+            rot_xy = torch.tensor([[cos, -sin], [sin, cos]], device=device, dtype=base_pos.dtype)
+            base_pos[:, :2] = (base_pos[:, :2] - pivot) @ rot_xy.T + pivot
+            # Compose orientation: q_new = q_z * q  (left-multiply by the Z rotation).
+            half = 0.5 * theta
+            q_z = torch.tensor(
+                [float(np.cos(half)), 0.0, 0.0, float(np.sin(half))], device=device, dtype=base_rot.dtype
+            ).expand_as(base_rot)
+            base_rot = quat_mul(q_z, base_rot)
+            base_rot = base_rot / base_rot.norm(dim=-1, keepdim=True)
+
         self.motion_base_poss_input = base_pos
         self.motion_base_rots_input = base_rot
         self.motion_dof_poss_input = torch.from_numpy(dof_pos).to(device)
         self.input_frames = dof_pos.shape[0]
         self.duration = (self.input_frames - 1) * self.input_dt
         print(f"Motion loaded ({motion_file}), duration {self.duration:.3f}s, frames {self.input_frames}, "
-              f"in_fps {self.input_fps}, quat {quat_order}, turn_y {turn_y_axis}")
+              f"in_fps {self.input_fps}, quat {quat_order}, turn_y {turn_y_axis}, rotate_z {self.rotate_z_deg}deg")
 
         self._interpolate_motion()
         self._compute_velocities()
@@ -231,6 +259,7 @@ def run_simulator(sim, scene, joint_names):
         frame_range=args_cli.frame_range,
         quat_order=args_cli.quat_order,
         turn_y_axis=args_cli.turn_y_axis,
+        rotate_z_deg=args_cli.rotate_z_deg,
     )
 
     robot = scene["robot"]

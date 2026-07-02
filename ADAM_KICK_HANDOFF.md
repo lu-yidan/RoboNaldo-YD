@@ -20,51 +20,99 @@ exact next commands, and known model gaps**.
 | 2 | Task registration + Adam YAML preset + G1-hardcode fixes | DONE (scaffold; not run e2e) |
 | 3 | Convert Adam reference NPZ -> training NPZ (Isaac FK replay) | DONE + validated |
 | 4 | Stage-1 flat tracking training smoke test | DONE (runs e2e, 5 iters) |
+| 5 | Facing fix + motor-gain tuning + full Stage-1 run | DONE (reward ~22, 41% episodes complete; see §1b) |
 
-The env is installed and verified (headless app launch + all imports OK on GPU).
-Phase 3 output is `motions/right_kick_adam.npz` (611 frames @ 50 fps, 29 joints,
-30 bodies). Phase 4 smoke ran end-to-end: env builds, PPO updates (value loss
-0.43->0.19 over 5 iters), 80 scalar metrics + checkpoints logged. Next is a real
-training run (many iterations) to see reward actually climb + tune the model.
+The env is installed and verified. Phase 3 output is `motions/right_kick_adam.npz`
+(611 frames @ 50 fps, 29 joints, 30 bodies). Full Stage-1 training now runs to 2000
+iters and the policy learns the kick (walks in, kicks the ball, stays balanced) —
+see §1b.
 
-**Phase 4 smoke command that works** (128 envs, 5 iters):
+**Stage-1 training command (current, 4096 envs / 2000 iters, ~50 min on a 4070 Ti):**
 ```bash
 python scripts/rsl_rl/train.py --task Tracking-Body-Frame-Flat-Adam-v0 \
   --motion_file motions/right_kick_adam.npz \
   --yaml right_kick_adam/tracking_params.yaml \
-  --headless --logger tensorboard --run_name adam_kick_smoke \
-  --num_envs 128 --max_iterations 5
+  --headless --logger tensorboard --run_name adam_kick_stage1 \
+  --num_envs 4096 --max_iterations 2000
 ```
-Logs/checkpoints under `logs/rsl_rl/adam_flat/<ts>_adam_kick_smoke/`.
+Logs/checkpoints under `logs/rsl_rl/adam_flat/<ts>_adam_kick_stage1/`.
+
+**Play a checkpoint + record video** (needs the GPU free, i.e. not while training):
+```bash
+python scripts/rsl_rl/play.py --task Tracking-Body-Frame-Flat-Adam-v0 \
+  --load_run <ts>_adam_kick_stage1 --checkpoint model_1999.pt \
+  --yaml right_kick_adam/tracking_params.yaml \
+  --motion_file motions/right_kick_adam.npz --num_envs 1 \
+  --video --video_length 650 --video_views isometric --video_closeup --headless
+# -> logs/videos/rl-video-step-0.mp4
+```
 
 **Validation of Phase 3 output** (right-foot kick, looks correct):
-- pelvis z 0.86-0.93 (mean 0.91); toeRight (kicking foot) swings 0.06 -> 0.94 m
-  peak at frame ~280, toeLeft planted (0.06-0.19); quats normalized, no NaNs.
+- pelvis z 0.86-0.93 (mean 0.91); toeRight (kicking foot) swings up during the
+  kick, toeLeft planted; quats normalized, no NaNs.
 - `joint_pos` range matches the input dof range exactly -> BFS joint mapping OK.
 - All 14 `ADAM_TRACKED_BODY_NAMES` + anchor/feet/wrist/torso names exist in the
   robot body order printed by the converter.
-- Note: pelvis drifts ~2.25 m in -y because the initial root yaw (~104 deg) makes
-  the character's forward axis point along world -y. Not a bug.
+- **Facing FIXED:** the raw Adam kick data travels along world **-Y** (forward is
+  body **+X**, but the initial root yaw points body +X at world -Y). The ball /
+  target / over-line logic all assume **+Y** (so does the deploy
+  `freekick_motion.npz`, which also travels +Y). The converter now applies
+  `--rotate_z_deg 180` so forward = +Y and the robot faces the ball. (An earlier
+  note called the -Y drift "not a bug" — true kinematically, but it faced away
+  from the ball, so we rotate it to match the +Y convention.)
+
+## 1b. Latest training results (Stage-1, flat, 2000 iters, 4096 envs)
+
+Two fixes unblocked a working kick, in order:
+
+1. **Facing fix** (`--rotate_z_deg 180` in the converter): the robot now faces the
+   ball. Stage-1 has `goal_weight=0`, so this alone doesn't change tracking reward,
+   but it's required for Stage-2 (ball/goal rewards) and for playback to look right.
+2. **Motor-gain + termination fix (the big one):** with pnd_rl_lab's soft ankle
+   gains the pelvis anchor drifted out of the 0.25 m bound in ~1 s. Switching ankle
+   + arm to the stiffer instinctMj gains and relaxing `anchor_pos` 0.25 -> 0.45:
+
+   | metric | soft gains / 0.25 | stiff ankle+arm / 0.45 |
+   |---|---|---|
+   | reward | 2.4 | **22.1** |
+   | mean episode length | 48 steps | **344 steps** |
+   | episodes reaching timeout | ~0% | **41%** |
+   | `anchor_pos` termination | 0.83 | **0.00** |
+   | `error_joint_vel` | ~16 | **6.5** |
+
+   Playback: the robot walks in, kicks the ball (it flies several metres), and
+   stays balanced. **Remaining:** `ee_body_pos` termination is still ~0.59 (the
+   fast foot swing trips the 0.25 m end-effector bound at contact) and
+   `error_joint_pos ~1.4` still has slack — 2000 iters is smoke scale, 10k+ should
+   tighten tracking; relaxing the `ee_body_pos` threshold during the kick window is
+   the other lever.
 
 ## 2. What changed (this work)
 
 Main repo (`RoboNaldo-YD`):
-- `source/whole_body_tracking/whole_body_tracking/robots/adam.py` — **NEW**. Adam
-  Inspire 29-DOF `ArticulationCfg`. Motor Kp/Kd/effort/velocity from `pnd_rl_lab`;
-  wrist gains + armature from `instinctMj`. Also computes `ADAM_ACTION_SCALE`.
+- `source/whole_body_tracking/whole_body_tracking/robots/adam.py` — **NEW + TUNED**.
+  Adam Inspire 29-DOF `ArticulationCfg`. Motor Kp/Kd/effort for hip/knee/waist from
+  `pnd_rl_lab`; **ankle (pitch 30->130, roll 3->70) and arm (shoulder/elbow ->60)
+  now use the stiffer `instinctMj` gains** — pnd's were too soft for the kick (§1b);
+  wrist gains + armature from `instinctMj`. Also computes `ADAM_ACTION_SCALE`
+  (auto-recomputed from the gains, so it tracks these changes).
 - `.../tasks/tracking/config/adam/` — **NEW**. Task registration
   (`Tracking-Flat-Adam-v0`, `Tracking-Body-Frame-Flat-Adam-v0`), `flat_env_cfg.py`
   (remaps every config-overridable G1 name -> Adam URDF name), RSL-RL agent cfg,
   and `README_ADAM_HAZARDS.md`.
-- `.../tasks/tracking/yaml/right_kick_adam/tracking_params.yaml` — **NEW**. Adam
-  Stage-1 preset (`main_foot_name=toeRight`, self-collision off, etc.).
+- `.../tasks/tracking/yaml/right_kick_adam/tracking_params.yaml` — **NEW + TUNED**.
+  Adam Stage-1 preset (`main_foot_name=toeRight`, self-collision off, etc.).
+  `anchor_pos` termination threshold relaxed 0.25 -> 0.45 (§1b).
 - `.../tasks/tracking/mdp/rewards.py` — **MODIFIED**. Fixed two G1-hardcoded spots
   that would crash Adam: `penalize_weak_foot_contact` (optional `weak_foot_name`
   param) and `arm_default_pose_penalty` (elbow match by substring). G1 behavior
   unchanged.
-- `scripts/adam_npz_to_npz.py` — **NEW**. Converts an Adam reference NPZ
+- `scripts/adam_npz_to_npz.py` — **NEW + rotate_z**. Converts an Adam reference NPZ
   (root_pos/root_rot/dof_pos, BFS, WXYZ) into the body-level training NPZ by
-  kinematically replaying it on `ADAM_INSPIRE_CFG` and logging Isaac FK. RUN OK.
+  kinematically replaying it on `ADAM_INSPIRE_CFG` and logging Isaac FK. Added
+  `--rotate_z_deg` (a true rotation about world Z, pivoting on the start pose —
+  unlike `--turn_y_axis`, which mirrors and flips handedness). We build
+  `right_kick_adam.npz` with `--rotate_z_deg 180` so forward = +Y (faces the ball).
 - `source/whole_body_tracking/whole_body_tracking/assets.py` — **FIXED**.
   `ASSET_DIR` pointed at a non-existent package-local `assets/` folder; now
   `parents[3]/"assets"` = the repo-level `assets/` repo (holds
@@ -184,10 +232,12 @@ Run the G1 task once to confirm the `rewards.py` edits didn't regress G1.
 
 These are the most likely things to revisit after the first runs:
 
-1. **Arm/ankle gains may be too soft for a fast kick.** pnd_rl_lab ankle Kp is
-   much lower than instinctMj (30 vs 130 pitch, 3 vs 70 roll); shoulders 18/9 vs
-   60. If the struck leg or arms lag the reference, swap those groups to the
-   stiffer instinctMj values (comparison table in `README_ADAM_HAZARDS.md` §4).
+1. **Arm/ankle gains — RESOLVED (swapped to instinctMj).** pnd_rl_lab's ankle Kp
+   (30 pitch / 3 roll) and arm Kp (18/9) were too soft: the support foot could not
+   hold balance and episodes died in ~1 s (83% `anchor_pos` terminations, no kick).
+   `adam.py` now uses the stiffer instinctMj ankle (130/70) + arm (60) gains, which
+   fixed it — see §1b. hip/knee/waist stay on pnd_rl_lab (there pnd is as stiff or
+   stiffer). Comparison table in `README_ADAM_HAZARDS.md` §4.
 2. **Wrist gains + all armature are `instinctMj` fallbacks.** Our model is a full
    **29 DOF** (all wrists `revolute`); only pnd_rl_lab's *reference* URDF fixes
    the wrists (23 DOF) and sets no armature, so those gains had no pnd source and

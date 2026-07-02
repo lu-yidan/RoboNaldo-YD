@@ -81,8 +81,11 @@ ee_body_pos_termination_penalty}`, `terminations.ee_body_pos`, plus
 
 ## 4. Motor-parameter comparison (pnd_rl_lab [used] vs instinctMj adam_sp)
 
-`adam.py` now uses the pnd_rl_lab column. Kp/Kd diverge sharply on arms/ankles;
-effort/velocity now come from the pnd_rl_lab actuator T-N curve (`Y1` / rated).
+`adam.py` uses the pnd_rl_lab column for hip/knee/waist, but **ankle (pitch+roll)
+and arm (shoulder/elbow/wrist) now use the instinctMj column** — pnd's arm/ankle
+gains were too soft (see the UPDATE below). Kp/Kd diverge sharply on arms/ankles;
+effort/velocity for the pnd groups come from the pnd_rl_lab actuator T-N curve
+(`Y1` / rated).
 
 | Joint | pnd Kp/Kd (used) | pnd eff/vel (used) | instinctMj Kp/Kd | instinctMj eff/vel |
 |---|---|---|---|---|
@@ -104,6 +107,14 @@ physical limit. pnd_rl_lab velocities are the actuator rated speeds.
 Biggest risk if pnd_rl_lab arm/ankle gains prove too soft for a fast kick: the
 struck leg / arms may lag the reference. If tracking underfits, the instinctMj
 (stiffer) arm/ankle gains are the fallback — swap per-group in `adam.py`.
+
+**UPDATE (done, this is what happened):** pnd_rl_lab's arm/ankle gains *were* too
+soft — the soft-gain Stage-1 run died in ~1 s (83% `anchor_pos` terminations, no
+kick, reward ~2.4). `adam.py` now uses the **instinctMj ankle + arm gains**
+(anklePitch 130, ankleRoll 70, shoulder/elbow 60); hip/knee/waist stay pnd_rl_lab.
+Combined with relaxing the `anchor_pos` termination 0.25 -> 0.45, reward went
+2.4 -> 22, mean episode length 48 -> 344 steps, and the kick works. Details in
+`ADAM_KICK_HANDOFF.md` §1b.
 
 ## 5. Open decisions — status
 

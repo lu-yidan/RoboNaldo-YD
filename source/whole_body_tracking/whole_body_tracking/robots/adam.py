@@ -7,8 +7,14 @@ most directly applicable source for Isaac Lab. See ``README_ADAM_HAZARDS.md``
 for the full comparison against ``instinctMj`` (mjlab) ``adam_sp.py``.
 
 Sourcing notes:
-  * Kp / Kd  -> pnd_rl_lab ``PND_ADAM_INSPIRE_CFG.actuators``.
-  * effort   -> pnd_rl_lab ``pnd_actuators`` peak torque ``Y1``.
+  * Kp / Kd  -> pnd_rl_lab ``PND_ADAM_INSPIRE_CFG.actuators`` for hip/knee/waist;
+    **ankle (pitch+roll) and arm (shoulder+elbow) use the stiffer instinctMj
+    ``adam_sp`` gains** because pnd_rl_lab's ankle Kp (30/3) and arm Kp (9-18)
+    were too soft for the kick -- the support foot could not hold balance and the
+    pelvis anchor drifted out of bounds within ~1s (episode length ~48 steps).
+    See ``README_ADAM_HAZARDS.md`` section 4 (this was the documented fallback).
+  * effort   -> pnd_rl_lab ``pnd_actuators`` peak torque ``Y1`` (hip/knee/waist);
+    instinctMj ``adam_sp`` effort for ankle (80/40) and arm.
   * velocity -> pnd_rl_lab actuator docstring rated speed (rad/s).
   * armature -> ``instinctMj`` adam_sp (pnd_rl_lab AdamInspire actuators do not
     specify armature; instinctMj values are physically derived, so kept here).
@@ -105,22 +111,26 @@ ADAM_INSPIRE_CFG = ArticulationCfg(
             damping=6.1,
             armature=0.23409,
         ),
-        # anklePitch (pnd_rl_lab: Kp30 Kd3.5, Y1=40, ~20 rad/s)
+        # anklePitch: instinctMj adam_sp (Kp130 Kd3.5, eff80). pnd_rl_lab's Kp30 is
+        # too soft for the fast kick -- the support foot cannot hold the reference
+        # and the pelvis anchor drifts out of the termination bound within ~1s.
         "ankle_pitch": ImplicitActuatorCfg(
             joint_names_expr=["anklePitch_.*"],
-            effort_limit_sim=40.0,
+            effort_limit_sim=80.0,
             velocity_limit_sim=20.0,
-            stiffness=30.0,
+            stiffness=130.0,
             damping=3.5,
             armature=0.0549,
         ),
-        # ankleRoll (pnd_rl_lab: Kp3 Kd0.35, Y1=12, ~20 rad/s)
+        # ankleRoll: instinctMj adam_sp (Kp70 Kd2, eff40). pnd_rl_lab's Kp3 is
+        # near-zero stiffness -- the ankle cannot stabilize lateral balance, the
+        # dominant cause of early anchor_pos terminations in the pnd-gain run.
         "ankle_roll": ImplicitActuatorCfg(
             joint_names_expr=["ankleRoll_.*"],
-            effort_limit_sim=12.0,
+            effort_limit_sim=40.0,
             velocity_limit_sim=20.0,
-            stiffness=3.0,
-            damping=0.35,
+            stiffness=70.0,
+            damping=2.0,
             armature=0.0549,
         ),
         # waist roll/pitch (Kp405 Kd6.1) + yaw (Kp205 Kd4.1); Y1=110, ~8 rad/s
@@ -132,22 +142,23 @@ ADAM_INSPIRE_CFG = ArticulationCfg(
             damping={"waistRoll": 6.1, "waistPitch": 6.1, "waistYaw": 4.1},
             armature=0.23409,
         ),
-        # shoulder pitch (Kp18) / roll+yaw (Kp9), Kd0.9; Y1=65, ~8 rad/s
+        # shoulder pitch/roll/yaw: instinctMj adam_sp (Kp60 Kd3). pnd_rl_lab's
+        # Kp9-18 is too soft to track the arm swing that counterbalances the kick.
         "shoulder": ImplicitActuatorCfg(
             joint_names_expr=["shoulderPitch_.*", "shoulderRoll_.*", "shoulderYaw_.*"],
             effort_limit_sim=65.0,
             velocity_limit_sim=8.0,
-            stiffness={"shoulderPitch_.*": 18.0, "shoulderRoll_.*": 9.0, "shoulderYaw_.*": 9.0},
-            damping=0.9,
+            stiffness=60.0,
+            damping=3.0,
             armature=0.01,
         ),
-        # elbow (pnd_rl_lab: Kp9 Kd0.9, Y1=30, ~8 rad/s)
+        # elbow: instinctMj adam_sp (Kp60 Kd3). pnd_rl_lab's Kp9 is too soft.
         "elbow": ImplicitActuatorCfg(
             joint_names_expr=["elbow_.*"],
             effort_limit_sim=30.0,
             velocity_limit_sim=8.0,
-            stiffness=9.0,
-            damping=0.9,
+            stiffness=60.0,
+            damping=3.0,
             armature=0.01,
         ),
         # wrist yaw/pitch/roll -> instinctMj adam_sp gains. Our URDF actuates all

@@ -84,7 +84,10 @@ reward_overrides:
       weight: -0.1
 termination_overrides:
   anchor_pos:
-    threshold: 0.25
+    # Relaxed 0.25 -> 0.45: the kick's forward lunge is dynamic and the pelvis
+    # anchor briefly lags the reference; 0.25 killed ~83% of episodes at ~48
+    # steps before the policy could reach the kick. Give it room to learn.
+    threshold: 0.45
   ee_body_pos:
     threshold:
       toeLeft: 0.25
