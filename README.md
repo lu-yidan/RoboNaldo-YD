@@ -44,13 +44,20 @@ deployment, export the trained policy to ONNX and use it with
 Install Isaac Sim and Isaac Lab first. This codebase follows the Isaac Lab
 extension layout and is intended for the Isaac Lab Python environment.
 
-Recommended baseline:
+Original upstream baseline (Isaac Sim 4.5.0 / Isaac Lab 2.1.0 / Python 3.10)
+also works. The stack this fork is currently developed and validated on:
 
 | Dependency | Version |
 | --- | --- |
-| Isaac Sim | 4.5.0 |
-| Isaac Lab | 2.1.0 |
-| Python | 3.10 |
+| Isaac Sim | 5.1.0 (pip `isaacsim[all,extscache]`) |
+| Isaac Lab | 2.3.2 |
+| Python | 3.11 |
+| PyTorch | 2.7.0+cu128 |
+| rsl-rl-lib | 3.1.2 (must match Isaac Lab's pin) |
+
+> The Isaac Sim 5.1 + Isaac Lab 2.3 native install has a few dependency
+> ordering pitfalls (torch pin, `flatdict`/`setuptools`, `rsl-rl-lib` version).
+> See `ADAM_KICK_HANDOFF.md` §3 for the exact, reproducible recipe.
 
 ### 2. Install BeyondMimic
 
@@ -80,20 +87,17 @@ The Unitree G1 description is not committed to this repository. Download it
 before creating the environment from the same asset source used by BeyondMimic:
 
 ```bash
-mkdir -p source/whole_body_tracking/whole_body_tracking/assets
+mkdir -p assets
 curl -L -o unitree_description.tar.gz https://storage.googleapis.com/qiayuanl_robot_descriptions/unitree_description.tar.gz
-tar -xzf unitree_description.tar.gz -C source/whole_body_tracking/whole_body_tracking/assets/
+tar -xzf unitree_description.tar.gz -C assets/
 rm unitree_description.tar.gz
-test -f source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf
+test -f assets/unitree_description/urdf/g1/main.urdf
 ```
 
 The code resolves this path through `whole_body_tracking/assets.py`, where
-`ASSET_DIR` points to `source/whole_body_tracking/whole_body_tracking/assets`.
-Do not add an `assets/__init__.py`; unlike the upstream BeyondMimic setup, this
-repository already provides the Python module that owns `ASSET_DIR`.
-
-The downloaded `source/.../assets/` directory is ignored by `.gitignore` and
-should not be committed. The soccer ball is created with Isaac Lab native
+`ASSET_DIR` points to the repo-level `assets/` directory (`parents[3]/"assets"`).
+Robot descriptions live there (`unitree_description/`, and for this fork
+`pnd_description/` for Adam). The soccer ball is created with Isaac Lab native
 `SphereCfg`, so no separate ball mesh is required.
 
 ### 5. Prepare Motions and Checkpoints

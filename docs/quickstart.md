@@ -5,8 +5,12 @@ all commands from the repository root unless noted otherwise.
 
 ## Environment
 
-Install Isaac Sim 4.5.0 and Isaac Lab 2.1.0, then activate the Python
-environment that can import `isaaclab`, `isaaclab_tasks`, and `isaaclab_rl`.
+Install Isaac Sim + Isaac Lab, then activate the Python environment that can
+import `isaaclab`, `isaaclab_tasks`, and `isaaclab_rl`. The upstream baseline
+(Isaac Sim 4.5.0 / Isaac Lab 2.1.0 / Python 3.10) works; this fork is currently
+validated on **Isaac Sim 5.1.0 + Isaac Lab 2.3.2 + Python 3.11 +
+torch 2.7.0+cu128 + rsl-rl-lib 3.1.2**. See `ADAM_KICK_HANDOFF.md` §3 for the
+exact native-install recipe and dependency-ordering pitfalls.
 
 Install the RoboNaldo training extension:
 
@@ -16,18 +20,19 @@ python -m pip install -e source/whole_body_tracking
 
 ## Robot Assets
 
-Download the Unitree description assets:
+Download the Unitree description assets into the repo-level `assets/` directory
+(where `ASSET_DIR` resolves):
 
 ```bash
-mkdir -p source/whole_body_tracking/whole_body_tracking/assets
+mkdir -p assets
 curl -L -o unitree_description.tar.gz https://storage.googleapis.com/qiayuanl_robot_descriptions/unitree_description.tar.gz
-tar -xzf unitree_description.tar.gz -C source/whole_body_tracking/whole_body_tracking/assets/
+tar -xzf unitree_description.tar.gz -C assets/
 rm unitree_description.tar.gz
-test -f source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf
+test -f assets/unitree_description/urdf/g1/main.urdf
 ```
 
-The path is resolved by `whole_body_tracking/assets.py`. The asset directory is
-ignored by git.
+The path is resolved by `whole_body_tracking/assets.py` (`ASSET_DIR =
+parents[3]/"assets"`).
 
 ## Motion Data
 

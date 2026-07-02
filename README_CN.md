@@ -42,13 +42,20 @@ RoboNaldo 在 Isaac Lab 中训练 Unitree G1 足球射门策略。
 
 请先安装 Isaac Sim 和 Isaac Lab。本代码库遵循 Isaac Lab extension 布局，需要在 Isaac Lab Python 环境中运行。
 
-推荐基线版本：
+上游原始基线（Isaac Sim 4.5.0 / Isaac Lab 2.1.0 / Python 3.10）同样可用。
+本 fork 当前开发与验证所用的版本：
 
 | 依赖 | 版本 |
 | --- | --- |
-| Isaac Sim | 4.5.0 |
-| Isaac Lab | 2.1.0 |
-| Python | 3.10 |
+| Isaac Sim | 5.1.0（pip `isaacsim[all,extscache]`） |
+| Isaac Lab | 2.3.2 |
+| Python | 3.11 |
+| PyTorch | 2.7.0+cu128 |
+| rsl-rl-lib | 3.1.2（必须与 Isaac Lab 的 pin 一致） |
+
+> Isaac Sim 5.1 + Isaac Lab 2.3 的原生安装存在几个依赖顺序上的坑（torch 固定版本、
+> `flatdict`/`setuptools`、`rsl-rl-lib` 版本）。可复现的完整步骤见
+> `ADAM_KICK_HANDOFF.md` §3。
 
 ### 2. 安装 BeyondMimic
 
@@ -76,17 +83,15 @@ python -m pip install -e source/whole_body_tracking
 Unitree G1 描述文件不随本仓库提交。创建环境前，请从 BeyondMimic 使用的同一资产来源下载：
 
 ```bash
-mkdir -p source/whole_body_tracking/whole_body_tracking/assets
+mkdir -p assets
 curl -L -o unitree_description.tar.gz https://storage.googleapis.com/qiayuanl_robot_descriptions/unitree_description.tar.gz
-tar -xzf unitree_description.tar.gz -C source/whole_body_tracking/whole_body_tracking/assets/
+tar -xzf unitree_description.tar.gz -C assets/
 rm unitree_description.tar.gz
-test -f source/whole_body_tracking/whole_body_tracking/assets/unitree_description/urdf/g1/main.urdf
+test -f assets/unitree_description/urdf/g1/main.urdf
 ```
 
-代码会通过 `whole_body_tracking/assets.py` 解析该路径，其中 `ASSET_DIR` 指向 `source/whole_body_tracking/whole_body_tracking/assets`。
-不要添加 `assets/__init__.py`；不同于上游 BeyondMimic 的设置方式，本仓库已经提供拥有 `ASSET_DIR` 的 Python module。
-
-下载后的 `source/.../assets/` 目录已被 `.gitignore` 忽略，不应提交。足球使用 Isaac Lab 原生 `SphereCfg` 创建，因此不需要额外的球体 mesh。
+代码会通过 `whole_body_tracking/assets.py` 解析该路径，其中 `ASSET_DIR` 指向仓库根目录下的 `assets/`（`parents[3]/"assets"`）。
+机器人描述文件都放在这里（`unitree_description/`，本 fork 中还有用于 Adam 的 `pnd_description/`）。足球使用 Isaac Lab 原生 `SphereCfg` 创建，因此不需要额外的球体 mesh。
 
 ### 5. 准备动作和 checkpoint
 

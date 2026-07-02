@@ -12,9 +12,13 @@ Sourcing notes:
   * velocity -> pnd_rl_lab actuator docstring rated speed (rad/s).
   * armature -> ``instinctMj`` adam_sp (pnd_rl_lab AdamInspire actuators do not
     specify armature; instinctMj values are physically derived, so kept here).
-  * wrist    -> ``instinctMj`` adam_sp. pnd_rl_lab treats the Inspire wrists as
-    *fixed* (23 DOF); our URDF + motion data are 29 DOF, so the 3 wrist joints
-    per arm use instinctMj gains as the only available reference.
+  * wrist    -> ``instinctMj`` adam_sp. This robot is a **full 29 DOF**: the
+    ``adam_inspire`` URDF used here defines all 6 wrist joints as ``revolute``.
+    Only pnd_rl_lab's *reference* URDF (``pnd_robots/adam_inspire``) marks the
+    wrists ``type="fixed"`` and actuates 23 DOF, so its config has no wrist
+    gains to copy -- hence wrist Kp/Kd come from instinctMj adam_sp (whose
+    ``adam_sp.xml`` also drives all 29 DOF). This is a gain-sourcing note, not a
+    DOF limitation.
 
 Joint naming (URDF): camelCase + underscore side, e.g. ``hipPitch_Left``,
 ``kneePitch_Right``, ``elbow_Left``, ``wristYaw_Left``, ``waistRoll``.
@@ -146,7 +150,9 @@ ADAM_INSPIRE_CFG = ArticulationCfg(
             damping=0.9,
             armature=0.01,
         ),
-        # wrist yaw/pitch/roll -> instinctMj adam_sp (pnd_rl_lab has no wrist actuator; 23 DOF)
+        # wrist yaw/pitch/roll -> instinctMj adam_sp gains. Our URDF actuates all
+        # 6 wrist joints (29 DOF); only pnd_rl_lab's reference URDF fixes them
+        # (23 DOF), so there is no pnd_rl_lab wrist actuator to copy from.
         "wrist": ImplicitActuatorCfg(
             joint_names_expr=["wristYaw_.*", "wristPitch_.*", "wristRoll_.*"],
             effort_limit_sim=6.4,

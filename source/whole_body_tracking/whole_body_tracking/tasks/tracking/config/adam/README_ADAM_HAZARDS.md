@@ -10,9 +10,13 @@ Decision on record (updated): motor / actuator numbers now follow
 **pnd_rl_lab** (`assets/robots/pnd.py::PND_ADAM_INSPIRE_CFG` + `pnd_actuators.py`),
 which is **Isaac-Lab-native** and targets this same `adam_inspire` URDF — the
 most directly applicable source. Exceptions:
-- **Wrist joints** (`wrist{Yaw,Pitch,Roll}_*`): pnd_rl_lab treats the Inspire
-  wrists as *fixed* (23 DOF), so its config has no wrist actuator. Our URDF +
-  motion data are 29 DOF, so wrists keep **instinctMj** `adam_sp` gains.
+- **Wrist joints** (`wrist{Yaw,Pitch,Roll}_*`): our robot is a full **29 DOF** —
+  the `adam_inspire` URDF we train on defines all 6 wrist joints as `revolute`
+  (so does instinctMj's `adam_sp.xml`). Only pnd_rl_lab's *reference* URDF
+  (`pnd_robots/adam_inspire`) marks the wrists `type="fixed"` and actuates 23
+  DOF, so its config has no wrist actuator to copy. Wrist Kp/Kd therefore come
+  from **instinctMj** `adam_sp`. This is a *gain-sourcing* note, **not** a DOF
+  limitation of our model.
 - **Armature**: pnd_rl_lab AdamInspire actuators do not set armature; instinctMj
   per-group armature values (physically derived) are retained.
 
@@ -109,11 +113,13 @@ struck leg / arms may lag the reference. If tracking underfits, the instinctMj
   ("pelvis") and randomizes pelvis CoM.
 - **Tracked hand/wrist link**: our 29-DOF URDF ends the arm at `wristRoll{Left,
   Right}`; there is **no `EE_L_hand`/`EE_R_hand` link** (that exists only in
-  pnd_rl_lab's 23-DOF Inspire). We track `wristYaw{Left,Right}` (matches the YAML
-  `ee_body_pos`). Keep this consistent with Phase-3 motion conversion.
-- **DOF**: training target is the **29-DOF** RoboNaldo `adam_inspire` URDF (matches
-  the kick NPZ). pnd_rl_lab's 23-DOF variant is available under
-  `assets/pnd_description/` but not used for the kick.
+  pnd_rl_lab's fixed-wrist reference URDF). We track `wristYaw{Left,Right}`
+  (matches the YAML `ee_body_pos`). Keep this consistent with Phase-3 conversion.
+- **DOF**: training target is the **29-DOF** `adam_inspire` URDF under
+  `assets/pnd_description/adam_inspire/` (copied from RoboNaldo's legacy
+  `adam_inspire_description`; all 6 wrists `revolute`; matches the kick NPZ).
+  This is **not** pnd_rl_lab's `pnd_robots/adam_inspire` URDF, which fixes the
+  wrists (`type="fixed"`, 23 DOF) — we do not use that file for training.
 - **Init height**: `pos.z=0.89` (pnd_rl_lab default). Reset overwrites from the
   reference; adjust if fallback spawns clip/float.
 - **Self-collision termination**: `make_self_collision_termination()` in

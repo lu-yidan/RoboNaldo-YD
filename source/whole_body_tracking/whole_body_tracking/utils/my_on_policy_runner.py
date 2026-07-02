@@ -29,7 +29,7 @@ class MotionOnPolicyRunner(OnPolicyRunner):
     def save(self, path: str, infos=None):
         """Save the model, export the policy, and bind the motion artifact for WandB runs."""
         super().save(path, infos)
-        if self.logger.logger_type in ["wandb"]:
+        if self.logger_type in ["wandb"]:
             policy_path = path.split("model")[0]
             filename = policy_path.split("/")[-2] + ".onnx"
             policy = resolve_policy_module(self.alg)
