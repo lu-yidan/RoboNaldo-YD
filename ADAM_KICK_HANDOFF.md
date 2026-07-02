@@ -21,6 +21,8 @@ exact next commands, and known model gaps**.
 | 3 | Convert Adam reference NPZ -> training NPZ (Isaac FK replay) | DONE + validated |
 | 4 | Stage-1 flat tracking training smoke test | DONE (runs e2e, 5 iters) |
 | 5 | Facing fix + motor-gain tuning + full Stage-1 run | DONE (reward ~22, 41% episodes complete; see §1b) |
+| 5b | Full 10k-iter Stage-1 run | DONE (reward ~38, 92% episodes complete) |
+| 6 | Stage-2 (ball/goal rewards) resume-train from Stage-1 | DONE (see §1c) |
 
 The env is installed and verified. Phase 3 output is `motions/right_kick_adam.npz`
 (611 frames @ 50 fps, 29 joints, 30 bodies). Full Stage-1 training now runs to 2000
@@ -87,6 +89,40 @@ Two fixes unblocked a working kick, in order:
    tighten tracking; relaxing the `ee_body_pos` threshold during the kick window is
    the other lever.
 
+## 1c. Stage-2 results (ball/goal rewards, resume-trained, 10k iters, 4096 envs)
+
+Stage-2 turns on the full ball/goal reward set on top of the frozen-in tracking
+skill. **Resume from a Stage-1 checkpoint** (do NOT train from scratch):
+
+```bash
+cd /home/luyd/workspace/RoboNaldo-YD
+export WBT_TASK_PARAMS_YAML=right_kick_adam/task_params_2.yaml   # REQUIRED: bakes the
+      # ball-contact sensor prim path to toeRight at import time (else defaults to G1)
+python scripts/rsl_rl/train.py --task Tracking-Body-Frame-Flat-Adam-v0 \
+  --motion_file motions/right_kick_adam.npz \
+  --yaml right_kick_adam/task_params_2.yaml \
+  --resume --load_run <stage1_run_folder> --checkpoint model_9999.pt \
+  --headless --logger tensorboard --run_name adam_kick_stage2 \
+  --num_envs 4096 --max_iterations 10000
+```
+(~4 h on a 4070 Ti. Note `--resume` continues the iteration counter, so the final
+checkpoint of a 10k resume is `model_19998.pt`.)
+
+Result after 10k Stage-2 iters (run `2026-07-02_22-28-43_adam_kick_stage2`):
+- **Tracking preserved / improved:** `time_out` 0.976 (episodes complete), `anchor_pos`
+  termination ~0, `error_body_pos` **0.056** (better than Stage-1's 0.068).
+- **Ball interaction learned:** `last_episode_had_shot` 0.37 (up from 0.24 at start),
+  `max_ball_velocity` ~3.1 m/s — the robot walks in, contacts the ball, kicks it away,
+  and stays balanced (verified in playback).
+- **Remaining (Stage-3 job):** `shot_success_count` 0, `last_episode_shot_error` ~8 —
+  the ball is kicked but not accurately toward the target/over-line. This is expected:
+  Stage-3 (`right_kick/task_params_3.yaml` analog) adds `adapt_motion_flag`, `jump_flag`,
+  `use_ontime_ball_reset`, higher `goal_weight` (1.0) and `error_ball_to_target` (20),
+  and tighter difficulty to convert "kicks the ball" into "scores".
+
+**Next step (Phase 7):** create `right_kick_adam/task_params_3.yaml` (Adam-name port of
+the G1 Stage-3 preset) and resume-train from the Stage-2 checkpoint.
+
 ## 2. What changed (this work)
 
 Main repo (`RoboNaldo-YD`):
@@ -103,6 +139,11 @@ Main repo (`RoboNaldo-YD`):
 - `.../tasks/tracking/yaml/right_kick_adam/tracking_params.yaml` — **NEW + TUNED**.
   Adam Stage-1 preset (`main_foot_name=toeRight`, self-collision off, etc.).
   `anchor_pos` termination threshold relaxed 0.25 -> 0.45 (§1b).
+- `.../tasks/tracking/yaml/right_kick_adam/task_params_2.yaml` — **NEW**. Adam Stage-2
+  preset (Adam-name port of `right_kick/task_params_2.yaml`): `stage: task`,
+  `goal_weight 0.8`, full ball/goal reward block, `main_foot_name=toeRight`, and
+  `ee_body_pos` termination keyed by Adam links (toeLeft/toeRight/wristYaw*). All goal
+  reward terms verified to resolve on Adam (dry-run) — see §1c.
 - `.../tasks/tracking/mdp/rewards.py` — **MODIFIED**. Fixed two G1-hardcoded spots
   that would crash Adam: `penalize_weak_foot_contact` (optional `weak_foot_name`
   param) and `arm_default_pose_penalty` (elbow match by substring). G1 behavior
