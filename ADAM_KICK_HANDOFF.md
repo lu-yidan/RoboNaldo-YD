@@ -23,6 +23,7 @@ exact next commands, and known model gaps**.
 | 5 | Facing fix + motor-gain tuning + full Stage-1 run | DONE (reward ~22, 41% episodes complete; see §1b) |
 | 5b | Full 10k-iter Stage-1 run | DONE (reward ~38, 92% episodes complete) |
 | 6 | Stage-2 (ball/goal rewards) resume-train from Stage-1 | DONE (see §1c) |
+| 7 | Stage-3 (goal refinement, gentler Adam curriculum) resume-train | DONE (see §1d) |
 
 The env is installed and verified. Phase 3 output is `motions/right_kick_adam.npz`
 (611 frames @ 50 fps, 29 joints, 30 bodies). Full Stage-1 training now runs to 2000
@@ -123,6 +124,58 @@ Result after 10k Stage-2 iters (run `2026-07-02_22-28-43_adam_kick_stage2`):
 **Next step (Phase 7):** create `right_kick_adam/task_params_3.yaml` (Adam-name port of
 the G1 Stage-3 preset) and resume-train from the Stage-2 checkpoint.
 
+## 1d. Stage-3 results (goal refinement, gentler Adam curriculum, 10k iters, 4096 envs)
+
+Stage-3 pushes accuracy/power (score, don't just touch). **Resume from a Stage-2
+checkpoint.** IMPORTANT: G1's `task_params_3.yaml` cannot be used verbatim on Adam —
+its `init_yaw_range=1.0` (+-57 deg) instantly breaks ee_body_pos tracking for our
+fixed-facing motion, which collapsed the first attempt (99% ee terminations,
+negative reward from step 1). `right_kick_adam/task_params_3.yaml` is therefore a
+**gentler bridge**: Stage-2 init distribution + Stage-3 goal objective (see the file
+header for the exact softened knobs). Command:
+
+```bash
+cd /home/luyd/workspace/RoboNaldo-YD
+export WBT_TASK_PARAMS_YAML=right_kick_adam/task_params_3.yaml   # REQUIRED (sensor path)
+python scripts/rsl_rl/train.py --task Tracking-Body-Frame-Flat-Adam-v0 \
+  --motion_file motions/right_kick_adam.npz \
+  --yaml right_kick_adam/task_params_3.yaml \
+  --resume --load_run <stage2_run_folder> --checkpoint model_19998.pt \
+  --headless --logger tensorboard --run_name adam_kick_stage3 \
+  --num_envs 4096 --max_iterations 10000
+```
+(~4 h on a 4070 Ti. `--resume` continues the counter; final ckpt is `model_29997.pt`.)
+
+Result (run `2026-07-03_03-40-16_adam_kick_stage3`), a goal-vs-stability trade-off:
+
+| metric | Stage-2 end | Stage-3 mid (~25k) | Stage-3 end (~30k) |
+|---|---|---|---|
+| `shot_success_count` | 0.00 | 0.036 | **0.133** |
+| `last_episode_shot_error` | ~8 | ~6 | **4.65** |
+| `last_episode_had_shot` | 0.37 | 0.60 | 0.67 |
+| `max_ball_velocity` (m/s) | ~3.1 | ~7.5 | ~7.5 |
+| `time_out` (episode completes) | 0.976 | 0.93 | 0.70 |
+| `ee_body_pos` termination | 0.024 | 0.068 | 0.29 |
+| `error_body_pos` | 0.056 | 0.12 | 0.22 |
+| mean reward | ~38 | ~80 | ~43 |
+
+- **Win:** the robot now kicks *hard* (3 -> ~7.5 m/s) and much more accurately (shot
+  error 8 -> 4.6, success 0 -> 13%). Playback of `model_29997.pt` shows a clean
+  approach -> plant -> powerful kick -> balanced recovery.
+- **Cost:** the last ~2-3k iters traded stability for power — aggregate `time_out`
+  dropped 0.93 -> 0.70 and `ee_body_pos` terminations rose to 0.29. The **~25k
+  checkpoint** (`model_25xxx.pt`) is a more conservative pick (reward ~80, ee term
+  ~0.07) if you want stability over max power.
+
+**Next levers (Phase 8, if refining):**
+1. Rebalance: lower `goal_weight`/`error_ball_to_target` slightly or raise `robot_alive`
+   / relax `ee_body_pos` threshold during the kick window to keep stability while
+   scoring.
+2. Curriculum step-up: once stable, a follow-on preset can re-introduce the large
+   `init_yaw_range` / `init_pos_range` / `std_difficulty` that we softened here.
+3. Deploy path: export `model_29997.pt` (or the 25k ckpt) and compare against the
+   `RoboNaldo_Deploy` freekick policy.
+
 ## 2. What changed (this work)
 
 Main repo (`RoboNaldo-YD`):
@@ -144,6 +197,11 @@ Main repo (`RoboNaldo-YD`):
   `goal_weight 0.8`, full ball/goal reward block, `main_foot_name=toeRight`, and
   `ee_body_pos` termination keyed by Adam links (toeLeft/toeRight/wristYaw*). All goal
   reward terms verified to resolve on Adam (dry-run) — see §1c.
+- `.../tasks/tracking/yaml/right_kick_adam/task_params_3.yaml` — **NEW**. Adam Stage-3
+  preset: `goal_weight 1.0`, `error_ball_to_target 20`, `adapt_motion`/`ontime_ball_reset`
+  on, but a **gentler curriculum than G1** (softened init_yaw/pos/vel + difficulty,
+  jump off) because G1's full randomization collapses the fixed-facing motion. The
+  file header documents every deviation + why. See §1d.
 - `.../tasks/tracking/mdp/rewards.py` — **MODIFIED**. Fixed two G1-hardcoded spots
   that would crash Adam: `penalize_weak_foot_contact` (optional `weak_foot_name`
   param) and `arm_default_pose_penalty` (elbow match by substring). G1 behavior
