@@ -176,6 +176,45 @@ Result (run `2026-07-03_03-40-16_adam_kick_stage3`), a goal-vs-stability trade-o
 3. Deploy path: export `model_29997.pt` (or the 25k ckpt) and compare against the
    `RoboNaldo_Deploy` freekick policy.
 
+## 1e. Ball-position fix (the ball was placed for G1, not Adam)
+
+Symptom (spotted in playback): the robot grazed the ball with the wrong foot during
+the walk-in and the right-foot power swing kicked air. Root cause (measured from
+`motions/right_kick_adam.npz`, not guessed):
+
+- Adam's right (kicking) toe delivers its power strike at **world (0.18, 1.47, 0.11)**
+  moving **8.3 m/s forward** at frame ~265 while still low. (Left/support foot only
+  gets within 0.45 m of the old ball spot.)
+- The inherited-from-G1 ball spawn `[0.25, 1.0, 0.12]` sat **~0.47 m short in y** — at
+  y=1.0 the right foot is only mid-walk-stride (~3.5 m/s, still planted), so the ball
+  got nudged during the walk instead of struck by the swing.
+- `init_pos_range=0.5` (a 1 m-wide spawn box) also dwarfed the ~0.15 m strike window,
+  so the policy never reliably learned the right-foot timing.
+
+Fix (in `task_params_2.yaml` and `task_params_3.yaml`): `ball_init_state_pos ->
+[0.17, 1.45, 0.12]` (aligned to the measured strike point) and, for Stage-2,
+`init_pos_range 0.5 -> 0.15`. Frame-of-reference sanity: robot body **+X = forward**,
+which maps to **world +Y**; **world +X = robot's right**, so the ball at +x is on the
+kicking-foot side (correct).
+
+Result — ball-fixed Stage-2 (resume from Stage-1 `model_9999`, 10k iters), vs the old
+Stage-2:
+
+| metric | old Stage-2 (end) | ball-fixed mid (~12.5k) | ball-fixed end (20k) |
+|---|---|---|---|
+| `shot_success_count` | 0.00 (never) | 0.011 | **0.198** |
+| `max_ball_velocity` (m/s) | ~3.1 | ~4.7 | **12.5** |
+| `last_episode_shot_error` | ~8 | ~6.3 | **4.29** |
+| `time_out` | 0.976 | 0.975 | 0.63 |
+| `ee_body_pos` termination | 0.024 | 0.025 | 0.37 |
+| `error_body_pos` | 0.056 | 0.064 | 0.22 |
+
+Ball-fixed Stage-2 already **scores ~20%** with 12.5 m/s kicks (the old Stage-2 never
+scored). Playback of `model_19998.pt` (saved `logs/videos/adam_stage2_ballfix_model19998.mp4`)
+shows the ball centered in front, a clean right-foot strike, ball flies, upright
+follow-through. Same goal-vs-stability trade-off as §1d re-appears in the last ~5k
+iters (`time_out` 0.98 -> 0.63) — the ~12.5k checkpoint is the more stable pick.
+
 ## 2. What changed (this work)
 
 Main repo (`RoboNaldo-YD`):

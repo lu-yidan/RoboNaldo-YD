@@ -25,7 +25,11 @@ start_time_sampling_fraction: 0.0  # Always initialize from reference frame 0.
 # ---------------------------------------------------------------------------
 # Episode initialization ranges (applied at every env reset)
 # ---------------------------------------------------------------------------
-init_pos_range: 0.5         # Half-width [m] of uniform ball XY spawn range
+init_pos_range: 0.15        # Half-width [m] of uniform ball XY spawn range.
+                             # Tightened 0.5->0.15: the right-foot strike sweet spot
+                             # (measured from the ref motion) is a ~0.15 m window, so a
+                             # 1 m-wide spawn box let the ball miss it most resets and
+                             # the policy never learned to time the right-foot kick.
 init_vel_range: 0.01         # Half-speed [m/s] of uniform ball linear velocity spawn
 init_pos_z_bound: 0.0       # Upper bound [m] for ball Z spawn offset (lower = 0)
 init_vel_z_range: 0.0       # Half-speed [m/s] of ball Z velocity spawn (0 = static)
@@ -33,7 +37,13 @@ init_yaw_range: 0.2         # Half-angle [rad] of robot yaw perturbation at rese
 static_ball_probability: 0.05
 lidar_stale_probability: 0.0
 
-ball_init_state_pos: [0.25, 1.0, 0.12] # [x, y, z]
+ball_init_state_pos: [0.17, 1.45, 0.12] # [x, y, z]
+                             # Aligned to Adam's right-foot strike point measured from
+                             # motions/right_kick_adam.npz: at the kick (frame ~265) the
+                             # right toe passes (0.18, 1.47, 0.11) at 8.3 m/s forward.
+                             # The inherited G1 value [0.25, 1.0, 0.12] sat ~0.47 m short
+                             # in y (at the walk stride, not the power swing), so the ball
+                             # got grazed during the walk-in instead of struck.
 ball_init_state_vel: [0.0, 0.0, 0.0] # [x, y, z]
 std_difficulty_multiplier: 1
                              # Divides the std of Gaussian reward kernels; larger

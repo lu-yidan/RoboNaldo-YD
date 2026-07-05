@@ -50,7 +50,9 @@ static_ball_probability: 0.2  # Chance of zeroing the sampled reset velocity
 stand_still_env_ratio: 0.05    # Fraction of envs assigned to stand-still training
 lidar_stale_probability: 0.01 # Chance per env step that ball_pos_b reuses the previous lidar frame
 
-ball_init_state_pos: [0.25, 1.0, 0.12] # [x, y, z]
+ball_init_state_pos: [0.17, 1.45, 0.12] # [x, y, z]
+                             # Aligned to Adam's right-foot strike point (see task_params_2
+                             # note). Was [0.25, 1.0, 0.12] inherited from G1.
 ball_init_state_vel: [0.0, 0.0, 0.0] # [x, y, z]
 std_difficulty_multiplier: 1.0        # bridge: G1 uses 1.5
                              # Divides the std of Gaussian reward kernels; larger
